@@ -373,6 +373,7 @@ class AudioEncoderTrainer:
         # Initialize W&B
         if self.use_wandb:
             wandb.init(
+                entity="triplenegative",  # Your W&B username/team
                 project="semantic-eq-audio-encoder",
                 config={
                     'epochs': epochs,
