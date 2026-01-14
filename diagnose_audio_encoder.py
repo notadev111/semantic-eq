@@ -36,8 +36,15 @@ test_cases = [
 
 print("\nTesting with 5 very different audio signals:")
 
+# Get device from audio encoder
+device = next(generator.audio_encoder.parameters()).device
+print(f"Running on device: {device}")
+
 results = []
 for name, audio in test_cases:
+    # Move audio to same device as model
+    audio = audio.to(device)
+
     # Get latent vector
     z_audio = generator.audio_encoder(audio)
 
