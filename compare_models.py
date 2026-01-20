@@ -103,10 +103,11 @@ def get_semantic_profile(encoder, v2_model, audio: torch.Tensor, device: str):
             if not examples:
                 continue
 
-            # Get average latent for this term
+            # Get average latent for this term - use eq_params_normalized (numpy array)
             eq_params_list = []
             for ex in examples[:10]:  # Use up to 10 examples
-                eq_params_list.append(ex.to_tensor())
+                params = torch.from_numpy(ex.eq_params_normalized).float()
+                eq_params_list.append(params)
 
             eq_batch = torch.stack(eq_params_list).to(device)
             z_semantic, _ = v2_model.encoder(eq_batch)
@@ -128,7 +129,8 @@ def get_eq_prediction(v2_model, z_audio: torch.Tensor, target_semantic: str, int
             print(f"Warning: No examples for '{target_semantic}'")
             return torch.zeros(7)
 
-        eq_params_list = [ex.to_tensor() for ex in examples[:10]]
+        # Use eq_params_normalized (numpy array)
+        eq_params_list = [torch.from_numpy(ex.eq_params_normalized).float() for ex in examples[:10]]
         eq_batch = torch.stack(eq_params_list).to(device)
         z_target, _ = v2_model.encoder(eq_batch)
         z_centroid = z_target.mean(dim=0, keepdim=True)
