@@ -39,6 +39,19 @@ from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from tqdm import tqdm
+from datetime import datetime
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy types."""
+    def default(self, obj):
+        if isinstance(obj, (np.integer, np.int32, np.int64)):
+            return int(obj)
+        if isinstance(obj, (np.floating, np.float32, np.float64)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -734,7 +747,7 @@ def main():
                        help='Path to V2 model')
     parser.add_argument('--fma-path', type=str, required=True, help='Path to FMA dataset')
     parser.add_argument('--metadata-path', type=str, required=True, help='Path to FMA metadata')
-    parser.add_argument('--output', type=str, default='eval_results', help='Output directory')
+    parser.add_argument('--output', type=str, default=None, help='Output directory (default: results/eval_YYYY-MM-DD)')
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--n-samples', type=int, default=50, help='Samples per genre')
     args = parser.parse_args()
@@ -742,25 +755,33 @@ def main():
     device = args.device or ('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
+    # Create dated output directory
+    if output_dir is None:
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        output_dir = f'results/eval_{date_str}'
+    else:
+        output_dir = output_dir
+
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"Results will be saved to: {output_dir}/")
+
     # Load models
     print("\nLoading models...")
     encoder = load_encoder(args.encoder, device)
     v2_model = load_v2_model(args.v2_model, device)
-
-    os.makedirs(args.output, exist_ok=True)
 
     results = {}
 
     # Evaluation 1: Genre Clustering
     results['genre_clustering'] = evaluate_genre_clustering(
         encoder, v2_model, args.fma_path, args.metadata_path,
-        device, n_samples_per_genre=args.n_samples, output_dir=args.output
+        device, n_samples_per_genre=args.n_samples, output_dir=output_dir
     )
 
     # Evaluation 2: Semantic Consistency
     results['semantic_consistency'] = evaluate_semantic_consistency(
         encoder, v2_model, args.fma_path, device,
-        n_samples=100, output_dir=args.output
+        n_samples=100, output_dir=output_dir
     )
 
     # Evaluation 3: Model Comparison (if baseline exists)
@@ -769,18 +790,27 @@ def main():
         audio_files = glob.glob(str(Path(args.fma_path) / '**/*.mp3'), recursive=True)[:100]
         results['model_comparison'] = evaluate_model_comparison(
             encoder, baseline_encoder, v2_model, audio_files,
-            device, output_dir=args.output
+            device, output_dir=output_dir
         )
 
     # Evaluation 4: Feature Correlation (semantic vs spectral/echonest)
     results['feature_correlation'] = evaluate_feature_correlation(
         encoder, v2_model, args.fma_path, args.metadata_path,
-        device, n_samples=500, output_dir=args.output
+        device, n_samples=500, output_dir=output_dir
     )
 
-    # Save results
-    with open(f'{args.output}/evaluation_results.json', 'w') as f:
-        json.dump(results, f, indent=2)
+    # Save results with timestamp
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    results['metadata'] = {
+        'timestamp': timestamp,
+        'encoder': args.encoder,
+        'v2_model': args.v2_model,
+        'fma_path': args.fma_path,
+        'device': device,
+    }
+
+    with open(f'{output_dir}/evaluation_results.json', 'w') as f:
+        json.dump(results, f, indent=2, cls=NumpyEncoder)
 
     print("\n" + "="*70)
     print("EVALUATION SUMMARY")
@@ -789,7 +819,7 @@ def main():
     print(f"Semantic Consistency: {results['semantic_consistency']['mean_consistency']:.4f}")
     if 'feature_correlation' in results and results['feature_correlation']:
         print(f"Feature Correlations: {results['feature_correlation'].get('n_samples', 0)} tracks analyzed")
-    print(f"\nResults saved to: {args.output}/")
+    print(f"\nResults saved to: {output_dir}/")
     print("  - genre_clustering_tsne.png")
     print("  - semantic_consistency.png")
     print("  - semantic_spectral_correlation.png (if features available)")
