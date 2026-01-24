@@ -756,11 +756,11 @@ def main():
     print(f"Using device: {device}")
 
     # Create dated output directory
-    if output_dir is None:
+    if args.output is None:
         date_str = datetime.now().strftime('%Y-%m-%d')
         output_dir = f'results/eval_{date_str}'
     else:
-        output_dir = output_dir
+        output_dir = args.output
 
     os.makedirs(output_dir, exist_ok=True)
     print(f"Results will be saved to: {output_dir}/")
