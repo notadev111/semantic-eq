@@ -476,6 +476,252 @@ def evaluate_model_comparison(
 
 
 # ============================================================================
+# EVALUATION 4: Semantic-Feature Correlation (NEW)
+# ============================================================================
+
+def evaluate_feature_correlation(
+    encoder: FastAudioEncoder,
+    v2_model: NeuralEQMorphingSAFEDBV2,
+    fma_path: str,
+    metadata_path: str,
+    device: str,
+    n_samples: int = 500,
+    output_dir: str = 'eval_results'
+) -> Dict:
+    """
+    Correlate learned semantic embeddings with standard audio features.
+
+    This shows whether our "bright", "warm", etc. relate to:
+    - Spectral features (centroid, bandwidth, rolloff)
+    - Echo Nest descriptors (energy, acousticness, danceability)
+
+    Novel research contribution: Semantic EQ descriptors vs standard features.
+    """
+    print("\n" + "="*70)
+    print("EVALUATION 4: Semantic-Feature Correlation")
+    print("="*70)
+
+    # Load FMA features
+    features_path = Path(metadata_path) / 'features.csv'
+    echonest_path = Path(metadata_path) / 'echonest.csv'
+
+    features_df = None
+    echonest_df = None
+
+    if features_path.exists():
+        print("Loading features.csv...")
+        features_df = pd.read_csv(features_path, index_col=0, header=[0, 1, 2])
+        print(f"  Loaded {len(features_df)} track features")
+    else:
+        print("  features.csv not found")
+
+    if echonest_path.exists():
+        print("Loading echonest.csv...")
+        echonest_df = pd.read_csv(echonest_path, index_col=0, header=[0, 1])
+        print(f"  Loaded {len(echonest_df)} Echo Nest features")
+    else:
+        print("  echonest.csv not found")
+
+    if features_df is None and echonest_df is None:
+        print("No feature files found, skipping correlation analysis")
+        return {}
+
+    # Get audio files
+    audio_files = glob.glob(str(Path(fma_path) / '**/*.mp3'), recursive=True)
+
+    # Build track_id -> filepath mapping
+    track_id_to_path = {}
+    for f in audio_files:
+        try:
+            track_id = int(Path(f).stem)
+            track_id_to_path[track_id] = f
+        except:
+            continue
+
+    # Compute semantic centroids
+    centroids = compute_semantic_centroids(v2_model, device)
+    semantic_terms = list(centroids.keys())
+
+    # Collect data
+    semantic_scores_all = []
+    spectral_features_all = []
+    echonest_features_all = []
+    valid_track_ids = []
+
+    # Sample tracks that have both audio and features
+    if features_df is not None:
+        available_ids = list(set(features_df.index) & set(track_id_to_path.keys()))
+    elif echonest_df is not None:
+        available_ids = list(set(echonest_df.index) & set(track_id_to_path.keys()))
+    else:
+        available_ids = list(track_id_to_path.keys())
+
+    sampled_ids = np.random.choice(available_ids, min(n_samples, len(available_ids)), replace=False)
+
+    print(f"\nAnalyzing {len(sampled_ids)} tracks...")
+
+    for track_id in tqdm(sampled_ids, desc="Computing correlations"):
+        filepath = track_id_to_path.get(track_id)
+        if not filepath:
+            continue
+
+        # Load audio and get semantic scores
+        audio = load_audio_clip(filepath)
+        if audio is None:
+            continue
+
+        with torch.no_grad():
+            audio_tensor = audio.unsqueeze(0).to(device)
+            z = encoder(audio_tensor)
+            scores = get_semantic_scores(z.squeeze(0), centroids)
+
+        semantic_scores_all.append([scores[t] for t in semantic_terms])
+        valid_track_ids.append(track_id)
+
+        # Get spectral features
+        if features_df is not None and track_id in features_df.index:
+            try:
+                # Extract key spectral features
+                row = features_df.loc[track_id]
+                spectral = {
+                    'spectral_centroid': row[('spectral_centroid', 'mean', '01')],
+                    'spectral_bandwidth': row[('spectral_bandwidth', 'mean', '01')],
+                    'spectral_rolloff': row[('spectral_rolloff', 'mean', '01')],
+                    'zero_crossing_rate': row[('zcr', 'mean', '01')],
+                    'rmse': row[('rmse', 'mean', '01')],
+                }
+                spectral_features_all.append(spectral)
+            except:
+                spectral_features_all.append(None)
+        else:
+            spectral_features_all.append(None)
+
+        # Get Echo Nest features
+        if echonest_df is not None and track_id in echonest_df.index:
+            try:
+                row = echonest_df.loc[track_id]
+                echonest = {
+                    'acousticness': row[('echonest', 'audio_features')].get('acousticness', np.nan),
+                    'danceability': row[('echonest', 'audio_features')].get('danceability', np.nan),
+                    'energy': row[('echonest', 'audio_features')].get('energy', np.nan),
+                    'instrumentalness': row[('echonest', 'audio_features')].get('instrumentalness', np.nan),
+                    'speechiness': row[('echonest', 'audio_features')].get('speechiness', np.nan),
+                    'tempo': row[('echonest', 'audio_features')].get('tempo', np.nan),
+                    'valence': row[('echonest', 'audio_features')].get('valence', np.nan),
+                }
+                echonest_features_all.append(echonest)
+            except:
+                echonest_features_all.append(None)
+        else:
+            echonest_features_all.append(None)
+
+    semantic_scores_all = np.array(semantic_scores_all)
+
+    # Compute correlations
+    results = {'n_samples': len(valid_track_ids)}
+
+    # Semantic vs Spectral correlations
+    if any(s is not None for s in spectral_features_all):
+        print("\n--- Semantic vs Spectral Feature Correlations ---")
+
+        spectral_keys = ['spectral_centroid', 'spectral_bandwidth', 'spectral_rolloff', 'zero_crossing_rate', 'rmse']
+        spectral_matrix = []
+        valid_idx = []
+
+        for i, s in enumerate(spectral_features_all):
+            if s is not None:
+                spectral_matrix.append([s[k] for k in spectral_keys])
+                valid_idx.append(i)
+
+        if spectral_matrix:
+            spectral_matrix = np.array(spectral_matrix)
+            semantic_subset = semantic_scores_all[valid_idx]
+
+            correlations_spectral = {}
+            for i, sem_term in enumerate(semantic_terms):
+                for j, spec_feat in enumerate(spectral_keys):
+                    corr = np.corrcoef(semantic_subset[:, i], spectral_matrix[:, j])[0, 1]
+                    if not np.isnan(corr):
+                        correlations_spectral[f"{sem_term}_vs_{spec_feat}"] = corr
+
+            # Print strongest correlations
+            sorted_corrs = sorted(correlations_spectral.items(), key=lambda x: abs(x[1]), reverse=True)
+            print("\nStrongest Semantic-Spectral correlations:")
+            for pair, corr in sorted_corrs[:10]:
+                print(f"  {pair}: {corr:+.3f}")
+
+            results['spectral_correlations'] = {k: float(v) for k, v in sorted_corrs[:20]}
+
+            # Highlight expected patterns
+            print("\n  Expected patterns check:")
+            bright_centroid = correlations_spectral.get('bright_vs_spectral_centroid', 0)
+            print(f"    'bright' vs spectral_centroid: {bright_centroid:+.3f} (expect positive)")
+            warm_centroid = correlations_spectral.get('warm_vs_spectral_centroid', 0)
+            print(f"    'warm' vs spectral_centroid: {warm_centroid:+.3f} (expect negative)")
+
+    # Semantic vs Echo Nest correlations
+    if any(s is not None for s in echonest_features_all):
+        print("\n--- Semantic vs Echo Nest Correlations ---")
+
+        echonest_keys = ['acousticness', 'danceability', 'energy', 'instrumentalness', 'speechiness', 'valence']
+        echonest_matrix = []
+        valid_idx = []
+
+        for i, e in enumerate(echonest_features_all):
+            if e is not None:
+                row = [e.get(k, np.nan) for k in echonest_keys]
+                if not any(np.isnan(row)):
+                    echonest_matrix.append(row)
+                    valid_idx.append(i)
+
+        if echonest_matrix:
+            echonest_matrix = np.array(echonest_matrix)
+            semantic_subset = semantic_scores_all[valid_idx]
+
+            correlations_echonest = {}
+            for i, sem_term in enumerate(semantic_terms):
+                for j, en_feat in enumerate(echonest_keys):
+                    corr = np.corrcoef(semantic_subset[:, i], echonest_matrix[:, j])[0, 1]
+                    if not np.isnan(corr):
+                        correlations_echonest[f"{sem_term}_vs_{en_feat}"] = corr
+
+            sorted_corrs = sorted(correlations_echonest.items(), key=lambda x: abs(x[1]), reverse=True)
+            print("\nStrongest Semantic-EchoNest correlations:")
+            for pair, corr in sorted_corrs[:10]:
+                print(f"  {pair}: {corr:+.3f}")
+
+            results['echonest_correlations'] = {k: float(v) for k, v in sorted_corrs[:20]}
+
+    # Create correlation heatmap
+    if 'spectral_correlations' in results:
+        print("\nGenerating correlation heatmap...")
+
+        # Build correlation matrix for visualization
+        top_semantics = ['warm', 'bright', 'thin', 'muddy', 'punchy', 'clear']
+        top_semantics = [s for s in top_semantics if s in semantic_terms]
+
+        spectral_keys = ['spectral_centroid', 'spectral_bandwidth', 'rmse']
+
+        corr_matrix = np.zeros((len(top_semantics), len(spectral_keys)))
+        for i, sem in enumerate(top_semantics):
+            for j, spec in enumerate(spectral_keys):
+                key = f"{sem}_vs_{spec}"
+                corr_matrix[i, j] = results['spectral_correlations'].get(key, 0)
+
+        plt.figure(figsize=(10, 6))
+        plt.imshow(corr_matrix, cmap='RdBu_r', aspect='auto', vmin=-0.5, vmax=0.5)
+        plt.colorbar(label='Correlation')
+        plt.xticks(range(len(spectral_keys)), spectral_keys, rotation=45, ha='right')
+        plt.yticks(range(len(top_semantics)), top_semantics)
+        plt.title('Semantic Descriptors vs Spectral Features')
+        plt.tight_layout()
+        plt.savefig(f'{output_dir}/semantic_spectral_correlation.png', dpi=150)
+        plt.close()
+
+    return results
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -526,6 +772,12 @@ def main():
             device, output_dir=args.output
         )
 
+    # Evaluation 4: Feature Correlation (semantic vs spectral/echonest)
+    results['feature_correlation'] = evaluate_feature_correlation(
+        encoder, v2_model, args.fma_path, args.metadata_path,
+        device, n_samples=500, output_dir=args.output
+    )
+
     # Save results
     with open(f'{args.output}/evaluation_results.json', 'w') as f:
         json.dump(results, f, indent=2)
@@ -535,9 +787,12 @@ def main():
     print("="*70)
     print(f"\nGenre Clustering Silhouette: {results['genre_clustering']['silhouette_score']:.4f}")
     print(f"Semantic Consistency: {results['semantic_consistency']['mean_consistency']:.4f}")
+    if 'feature_correlation' in results and results['feature_correlation']:
+        print(f"Feature Correlations: {results['feature_correlation'].get('n_samples', 0)} tracks analyzed")
     print(f"\nResults saved to: {args.output}/")
     print("  - genre_clustering_tsne.png")
     print("  - semantic_consistency.png")
+    print("  - semantic_spectral_correlation.png (if features available)")
     print("  - evaluation_results.json")
 
 
