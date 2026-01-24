@@ -44,7 +44,7 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.audio_encoder import FastAudioEncoder, AudioEncoderConfig
-from core.neural_eq_v2 import NeuralEQMorphingSAFEDBV2
+from core.neural_eq_morphing_safedb_v2 import NeuralEQMorphingSAFEDBV2
 
 
 def load_encoder(encoder_path: str, device: str) -> FastAudioEncoder:
