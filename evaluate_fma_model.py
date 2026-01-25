@@ -533,8 +533,10 @@ def evaluate_feature_correlation(
 
     if echonest_path.exists():
         print("Loading echonest.csv...")
-        echonest_df = pd.read_csv(echonest_path, index_col=0, header=[0, 1])
+        # echonest.csv has 3-level header: (echonest, audio_features, feature_name)
+        echonest_df = pd.read_csv(echonest_path, index_col=0, header=[0, 1, 2])
         print(f"  Loaded {len(echonest_df)} Echo Nest features")
+        print(f"  Columns sample: {list(echonest_df.columns[:3])}")
     else:
         print("  echonest.csv not found")
 
@@ -616,17 +618,16 @@ def evaluate_feature_correlation(
         if echonest_df is not None and track_id in echonest_df.index:
             try:
                 row = echonest_df.loc[track_id]
-                echonest = {
-                    'acousticness': row[('echonest', 'audio_features')].get('acousticness', np.nan),
-                    'danceability': row[('echonest', 'audio_features')].get('danceability', np.nan),
-                    'energy': row[('echonest', 'audio_features')].get('energy', np.nan),
-                    'instrumentalness': row[('echonest', 'audio_features')].get('instrumentalness', np.nan),
-                    'speechiness': row[('echonest', 'audio_features')].get('speechiness', np.nan),
-                    'tempo': row[('echonest', 'audio_features')].get('tempo', np.nan),
-                    'valence': row[('echonest', 'audio_features')].get('valence', np.nan),
-                }
+                # echonest.csv has 3-level columns: ('echonest', 'audio_features', 'feature_name')
+                echonest = {}
+                for feat in ['acousticness', 'danceability', 'energy', 'instrumentalness', 'speechiness', 'tempo', 'valence']:
+                    try:
+                        val = row[('echonest', 'audio_features', feat)]
+                        echonest[feat] = float(val) if pd.notna(val) else np.nan
+                    except KeyError:
+                        echonest[feat] = np.nan
                 echonest_features_all.append(echonest)
-            except:
+            except Exception as e:
                 echonest_features_all.append(None)
         else:
             echonest_features_all.append(None)
@@ -668,12 +669,28 @@ def evaluate_feature_correlation(
 
             results['spectral_correlations'] = {k: float(v) for k, v in sorted_corrs[:20]}
 
+            # Save ALL correlations for key semantic terms (for paper)
+            key_terms = ['warm', 'bright', 'muddy', 'punchy', 'thin', 'clear', 'boomy', 'airy']
+            results['key_term_correlations'] = {}
+            for term in key_terms:
+                term_corrs = {k: v for k, v in correlations_spectral.items() if k.startswith(f"{term}_vs_")}
+                if term_corrs:
+                    results['key_term_correlations'][term] = term_corrs
+
             # Highlight expected patterns
             print("\n  Expected patterns check:")
             bright_centroid = correlations_spectral.get('bright_vs_spectral_centroid', 0)
             print(f"    'bright' vs spectral_centroid: {bright_centroid:+.3f} (expect positive)")
             warm_centroid = correlations_spectral.get('warm_vs_spectral_centroid', 0)
             print(f"    'warm' vs spectral_centroid: {warm_centroid:+.3f} (expect negative)")
+
+            # Print all key term correlations
+            print("\n  Key term correlations (all):")
+            for term in key_terms:
+                for feat in ['spectral_centroid', 'spectral_bandwidth', 'spectral_rolloff', 'rmse']:
+                    key = f"{term}_vs_{feat}"
+                    if key in correlations_spectral:
+                        print(f"    {key}: {correlations_spectral[key]:+.3f}")
 
     # Semantic vs Echo Nest correlations
     if any(s is not None for s in echonest_features_all):
