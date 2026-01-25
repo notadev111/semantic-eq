@@ -1,0 +1,296 @@
+e2e
+
+(venv) PS C:\Users\danie\Documents\!ELEC0030 Project\semantic_mastering_system> python analyze_audio_semantic.py --audio plt1.wav --encoder audio_encoder_e2e.pt --v2-model neural_eq_safedb_v2.pt --target warm --intensity 0.7 --output plt1_warm.png
+>> 
+Using device: cpu
+
+Loading models...
+
+Loading SAFE-DB dataset V2...
+======================================================================
+LOADING SAFE-DB DATASET V2 (WITH LOG-SCALE NORMALIZATION)
+======================================================================
+
+Loading UserData from: research\data\SAFEEqualiserUserData.csv
+  Loaded 1700 EQ settings
+
+Parsing raw EQ parameters...
+  Parsed 1700 valid settings
+  Filtered to 1369 settings (40 terms with >=3 examples)
+
+Computing normalization statistics...
+
+Normalizing parameters...
+
+Normalization ranges:
+  Gains: [-12.0, 12.0] dB -> [0, 1]
+  Freqs (log): [1.36, 4.30] -> [0, 1]
+  Q (log): [-1.00, 1.00] -> [0, 1]
+
+Vocabulary: 40 unique semantic terms
+
+======================================================================
+DATASET STATISTICS
+======================================================================
+
+Total settings: 1369
+Unique terms: 40
+
+Top terms:
+  warm           : 532 examples
+  bright         : 504 examples
+  test           : 181 examples
+  clear          :   8 examples
+  thin           :   7 examples
+  boomy          :   7 examples
+  re27           :   7 examples
+  vocals         :   6 examples
+  airy           :   6 examples
+  tinny          :   5 examples
+
+Model loaded from: neural_eq_safedb_v2.pt
+
+Analyzing: plt1.wav
+Window: 3.0s, Hop: 1.0s
+Energy weighting: enabled
+Duration: 7.3s
+Computing semantic centroids...
+Analyzing 14 semantic terms
+Processing 5 windows...
+
+======================================================================
+SEMANTIC AUDIO ANALYSIS RESULTS
+======================================================================
+
+Audio: plt1.wav
+Duration: 7.3s
+Windows analyzed: 5
+
+----------------------------------------------------------------------
+TOP SEMANTIC MATCHES (mean ± std over time)
+----------------------------------------------------------------------
+   1. re27            0.8901 ± 0.0143  (stable)
+   2. vocals          0.8661 ± 0.0075  (stable)
+   3. bright          0.8286 ± 0.0131  (stable)
+   4. airy            0.7678 ± 0.0123  (stable)
+   5. tinny           0.7014 ± 0.0124  (stable)
+   6. thin            0.6806 ± 0.0140  (stable)
+   7. brighter        0.6656 ± 0.0096  (stable)
+   8. test            0.6488 ± 0.0041  (stable)
+   9. clear           0.6398 ± 0.0048  (stable)
+  10. full            0.6194 ± 0.0010  (stable)
+
+----------------------------------------------------------------------
+TEMPORAL INSIGHTS
+----------------------------------------------------------------------
+Most temporally variable characteristics:
+  - warm: std=0.0199
+  - muddy: std=0.0181
+  - boomy: std=0.0158
+  - deep: std=0.0153
+  - re27: std=0.0143
+
+----------------------------------------------------------------------
+EQ SUGGESTION FOR: warm(70%)
+----------------------------------------------------------------------
+Frequency     Gain (dB)
+----------------------
+    60 Hz       +5.79
+   150 Hz       -4.74
+   400 Hz       +2.79
+  1000 Hz       -1.16
+  2500 Hz       -1.01
+  6000 Hz       +1.43
+ 12000 Hz       +0.77
+
+======================================================================
+Saved visualization to: plt1_warm.png
+
+Analysis complete!
+
+
+
+
+--------------------------------------------------
+
+old model 
+
+Using device: cpu
+
+Loading models...
+
+Loading SAFE-DB dataset V2...
+======================================================================
+LOADING SAFE-DB DATASET V2 (WITH LOG-SCALE NORMALIZATION)
+======================================================================
+
+Loading UserData from: research\data\SAFEEqualiserUserData.csv
+  Loaded 1700 EQ settings
+
+Parsing raw EQ parameters...
+  Parsed 1700 valid settings
+  Filtered to 1369 settings (40 terms with >=3 examples)
+
+Computing normalization statistics...
+
+Normalizing parameters...
+
+Normalization ranges:
+  Gains: [-12.0, 12.0] dB -> [0, 1]
+  Freqs (log): [1.36, 4.30] -> [0, 1]
+  Q (log): [-1.00, 1.00] -> [0, 1]
+
+Vocabulary: 40 unique semantic terms
+
+======================================================================
+DATASET STATISTICS
+======================================================================
+
+Total settings: 1369
+Unique terms: 40
+
+Top terms:
+  warm           : 532 examples
+  bright         : 504 examples
+  test           : 181 examples
+  clear          :   8 examples
+  thin           :   7 examples
+  boomy          :   7 examples
+  re27           :   7 examples
+  vocals         :   6 examples
+  airy           :   6 examples
+  tinny          :   5 examples
+
+Model loaded from: neural_eq_safedb_v2.pt
+
+Analyzing: plt1.wav
+Window: 3.0s, Hop: 1.0s
+Energy weighting: enabled
+Duration: 7.3s
+Computing semantic centroids...
+Analyzing 14 semantic terms
+Processing 5 windows...
+
+======================================================================
+SEMANTIC AUDIO ANALYSIS RESULTS
+======================================================================
+
+Audio: plt1.wav
+Duration: 7.3s
+Windows analyzed: 5
+
+----------------------------------------------------------------------
+TOP SEMANTIC MATCHES (mean ± std over time)
+----------------------------------------------------------------------
+   1. re27            0.8898 ± 0.0149  (stable)
+   2. vocals          0.8556 ± 0.0060  (stable)
+   3. bright          0.8350 ± 0.0131  (stable)
+   4. airy            0.7707 ± 0.0126  (stable)
+   5. tinny           0.7600 ± 0.0142  (stable)
+   6. clear           0.7512 ± 0.0109  (stable)
+   7. thin            0.6633 ± 0.0132  (stable)
+   8. brighter        0.6601 ± 0.0088  (stable)
+   9. full            0.6517 ± 0.0012  (stable)
+  10. test            0.6433 ± 0.0039  (stable)
+
+----------------------------------------------------------------------
+TEMPORAL INSIGHTS
+----------------------------------------------------------------------
+Most temporally variable characteristics:
+  - muddy: std=0.0213
+  - warm: std=0.0203
+  - deep: std=0.0172
+  - boomy: std=0.0161
+  - re27: std=0.0149
+
+======================================================================
+Saved visualization to: plt1_OLD.png
+
+Analysis complete!
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+You're right, GitHub caches contributor data. Here's how to make a completely fresh repo:
+
+Option 1: Delete and recreate on GitHub (quickest)
+
+Go to https://github.com/notadev111/semantic-eq/settings
+Scroll to bottom → "Delete this repository"
+Create new repo with same name
+Then run:
+
+cd "c:\Users\danie\Documents\!ELEC0030 Project\semantic_mastering_system"
+rm -rf .git
+git init
+git add .
+git commit -m "Initial commit: Semantic EQ system"
+git branch -M main
+git remote add origin https://github.com/notadev111/semantic-eq.git
+git push -u origin main
+Option 2: New repo with different name
+
+Create new repo on GitHub (e.g., semantic-eq-v2)
+Run:
+
+cd "c:\Users\danie\Documents\!ELEC0030 Project\semantic_mastering_system"
+rm -rf .git
+git init
+git add .
+git commit -m "Initial commit: Semantic EQ system"
+git branch -M main
+git remote add origin https://github.com/notadev111/<new-repo-name>.git
+git push -u origin main
+Which would you prefer? I can run the commands once you've created/deleted the repo on GitHub.
+
+
+
+
+
+
+
+
+Metric	What it Measures	Good Score	Paper-Ready
+Silhouette Score	Genre clustering quality	>0.3	Shows model learns musical features
+Semantic Consistency	Temporal stability	>0.7	Reliable predictions
+FMA vs Baseline	Training data impact	FMA better	Justifies real music training
+Genre-Semantic Correlation	Meaningful mapping	Clear patterns	Novel insight
+
+
+

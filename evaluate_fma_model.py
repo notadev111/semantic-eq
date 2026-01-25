@@ -64,11 +64,14 @@ def load_encoder(encoder_path: str, device: str) -> FastAudioEncoder:
     """Load trained audio encoder."""
     checkpoint = torch.load(encoder_path, map_location=device, weights_only=False)
 
+    # AudioEncoderConfig is a class with static dicts, not a dataclass
+    # FastAudioEncoder takes keyword arguments directly
     if 'config' in checkpoint:
-        config = AudioEncoderConfig(**checkpoint['config'])
-        encoder = FastAudioEncoder(config)
+        config_dict = checkpoint['config']
+        encoder = FastAudioEncoder(**config_dict)
     else:
-        encoder = FastAudioEncoder()
+        # Use default STANDARD config
+        encoder = FastAudioEncoder(**AudioEncoderConfig.STANDARD)
 
     if 'audio_encoder_state_dict' in checkpoint:
         encoder.load_state_dict(checkpoint['audio_encoder_state_dict'])
