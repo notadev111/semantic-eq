@@ -93,11 +93,14 @@ class EndToEndSemanticEQTrainer:
         device: str = None,
         sample_rate: int = 44100,
         audio_duration: float = 2.0,
+        fma_path: str = None,
+        fma_ratio: float = 0.5,
     ):
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.sample_rate = sample_rate
         self.audio_duration = audio_duration
         self.n_samples = int(sample_rate * audio_duration)
+        self.fma_ratio = fma_ratio
 
         print("="*70)
         print("END-TO-END DIFFERENTIABLE SEMANTIC EQ TRAINER")
@@ -154,6 +157,24 @@ class EndToEndSemanticEQTrainer:
         # Pink noise generator
         self.pink_generator = PinkNoiseGenerator()
 
+        # FMA loader (real music for domain generalization)
+        self.fma_loader = None
+        if fma_path and Path(fma_path).exists():
+            from core.multi_source_dataset import FMALoader
+            self.fma_loader = FMALoader(
+                root_path=fma_path,
+                sample_rate=sample_rate,
+                duration=audio_duration,
+            )
+            print(f"\n  FMA dataset loaded: {len(self.fma_loader.audio_files)} files")
+            print(f"  Training ratio: {fma_ratio*100:.0f}% FMA / {(1-fma_ratio)*100:.0f}% pink noise")
+        else:
+            if fma_path:
+                print(f"\n  WARNING: FMA path not found: {fma_path}")
+                print(f"  Falling back to 100% pink noise")
+            self.fma_ratio = 0.0
+            print(f"  Training source: 100% pink noise")
+
     def _precompute_semantic_embeddings(self):
         """Pre-compute latent embeddings for all semantic terms."""
         print("\nPre-computing semantic embeddings...")
@@ -181,13 +202,28 @@ class EndToEndSemanticEQTrainer:
 
         print(f"  Computed {len(self.semantic_embeddings)} semantic embeddings")
 
+        # Pre-compute term-to-settings index for balanced sampling
+        self._term_settings_index = {}
+        for term in self.v2_system.term_to_idx.keys():
+            settings = [s for s in self.v2_system.eq_settings
+                        if s.semantic_label == term]
+            if settings:
+                self._term_settings_index[term] = settings
+        self._term_list = list(self._term_settings_index.keys())
+        print(f"  Balanced sampling index: {len(self._term_list)} terms")
+        for t in self._term_list:
+            print(f"    {t}: {len(self._term_settings_index[t])} settings")
+
     def create_training_batch(self, batch_size: int) -> dict:
         """
         Create a batch of training data.
 
+        Audio source is mixed: FMA real music (fma_ratio) + pink noise (1-fma_ratio).
+        EQ settings are sampled with balanced class sampling across semantic terms.
+
         Returns dict with:
-            - audio_input: Clean pink noise
-            - audio_eq: Pink noise with known EQ applied
+            - audio_input: Clean source audio (FMA or pink noise)
+            - audio_eq: Source audio with known EQ applied
             - eq_params_norm: Normalized EQ parameters
             - semantic_labels: Semantic term for each sample
             - z_target: Target semantic embeddings
@@ -198,14 +234,26 @@ class EndToEndSemanticEQTrainer:
         semantic_labels = []
         z_targets = []
 
-        # Sample random EQ settings
+        # Sample with balanced class sampling to address class imbalance
+        # Without this, bright (37%) and warm (39%) dominate every batch
+        # With balanced sampling, each semantic term has equal probability
         for _ in range(batch_size):
-            # Pick random EQ setting
-            setting = np.random.choice(self.v2_system.eq_settings)
+            # 1. Pick a random semantic term (equal probability across all terms)
+            term = np.random.choice(self._term_list)
+            # 2. Pick a random EQ setting with that term (precomputed index)
+            setting = np.random.choice(self._term_settings_index[term])
 
-            # Generate pink noise
-            pink_noise = self.pink_generator.generate(self.n_samples, self.sample_rate)
-            audio_input = torch.FloatTensor(pink_noise).unsqueeze(0)  # [1, samples]
+            # Generate source audio: FMA (real music) or pink noise
+            use_fma = (self.fma_loader is not None and np.random.random() < self.fma_ratio)
+            if use_fma:
+                fma_clip = self.fma_loader.load_random_clip()
+                if fma_clip is not None:
+                    source_audio = fma_clip
+                else:
+                    source_audio = self.pink_generator.generate(self.n_samples, self.sample_rate)
+            else:
+                source_audio = self.pink_generator.generate(self.n_samples, self.sample_rate)
+            audio_input = torch.FloatTensor(source_audio).unsqueeze(0)  # [1, samples]
 
             # Apply EQ using scipy (non-differentiable, just for creating training data)
             from core.training_data_synthesis import BiquadEQFilter
@@ -215,7 +263,7 @@ class EndToEndSemanticEQTrainer:
             eq_params_denorm = self.v2_system.loader.denormalize_params(
                 np.array(setting.eq_params_normalized)
             )
-            audio_with_eq = eq_filter.apply_eq(pink_noise, eq_params_denorm, self.sample_rate)
+            audio_with_eq = eq_filter.apply_eq(source_audio, eq_params_denorm, self.sample_rate)
             audio_eq = torch.FloatTensor(audio_with_eq).unsqueeze(0)
 
             # Get target semantic embedding
@@ -321,6 +369,11 @@ class EndToEndSemanticEQTrainer:
                     'device': str(self.device),
                     'model_params': self.audio_encoder.get_num_parameters(),
                     'training_type': 'end-to-end-differentiable',
+                    'balanced_sampling': True,
+                    'fma_ratio': self.fma_ratio,
+                    'fma_enabled': self.fma_loader is not None,
+                    'n_fma_files': len(self.fma_loader.audio_files) if self.fma_loader else 0,
+                    'training_source': f'{self.fma_ratio*100:.0f}% FMA + {(1-self.fma_ratio)*100:.0f}% pink noise' if self.fma_loader else '100% pink noise',
                 }
             )
             wandb.watch(self.audio_encoder, log='all', log_freq=100)
@@ -484,6 +537,8 @@ Examples:
         v2_model_path=args.v2_model,
         audio_encoder_path=args.pretrained,
         device=args.device,
+        fma_path=args.fma_path,
+        fma_ratio=args.fma_ratio,
     )
 
     # Train
