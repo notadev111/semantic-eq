@@ -175,14 +175,20 @@ class EndToEndSemanticEQTrainer:
             self.fma_ratio = 0.0
             print(f"  Training source: 100% pink noise")
 
+    # Only train on meaningful tonal descriptors (exclude junk terms)
+    USABLE_TERMS = {"warm", "bright", "thin", "full", "muddy", "clear", "airy", "deep", "boomy", "tinny"}
+
     def _precompute_semantic_embeddings(self):
-        """Pre-compute latent embeddings for all semantic terms."""
+        """Pre-compute latent embeddings for usable semantic terms only."""
         print("\nPre-computing semantic embeddings...")
+        print(f"  Filtering to {len(self.USABLE_TERMS)} usable terms (excluding test, re27, vocals, brighter)")
 
         self.semantic_embeddings = {}
 
         with torch.no_grad():
             for term in self.v2_system.term_to_idx.keys():
+                if term not in self.USABLE_TERMS:
+                    continue
                 # Get all EQ settings for this term
                 term_settings = [s for s in self.v2_system.eq_settings
                                if s.semantic_label == term]
@@ -202,9 +208,11 @@ class EndToEndSemanticEQTrainer:
 
         print(f"  Computed {len(self.semantic_embeddings)} semantic embeddings")
 
-        # Pre-compute term-to-settings index for balanced sampling
+        # Pre-compute term-to-settings index for balanced sampling (usable terms only)
         self._term_settings_index = {}
         for term in self.v2_system.term_to_idx.keys():
+            if term not in self.USABLE_TERMS:
+                continue
             settings = [s for s in self.v2_system.eq_settings
                         if s.semantic_label == term]
             if settings:
